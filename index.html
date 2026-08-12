@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#20201d">
+  <title>拉片卡 · 场景学习工作台</title>
+  <meta name="description" content="按影片项目管理场次，拆解人物行动，生成拉片学习卡，并归档到 Obsidian。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <header class="topbar">
+    <button id="homeButton" class="brand" type="button" aria-label="返回影片项目">
+      <span class="brand-mark">片</span>
+      <span>
+        <strong>拉片卡</strong>
+        <small>场景学习工作台</small>
+      </span>
+    </button>
+    <div class="top-actions">
+      <span id="saveStatus" class="save-status">数据只保存在本机</span>
+      <button id="backupButton" class="button ghost" type="button">备份数据</button>
+      <label class="button ghost file-button">
+        恢复备份
+        <input id="restoreInput" type="file" accept="application/json,.json">
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <section id="projectHome" class="home-view">
+      <div class="home-hero">
+        <div>
+          <p class="eyebrow">你的电影学习档案</p>
+          <h1>一场一场看清，<br>人物如何推动事件。</h1>
+          <p class="hero-copy">填写一次，自动保存在本机；完成后导出图片，也可以归档到 Obsidian。</p>
+        </div>
+        <button id="newProjectButton" class="button primary large" type="button">＋ 新建影片项目</button>
+      </div>
+      <div id="projectGrid" class="project-grid"></div>
+      <div id="emptyProjects" class="empty-state hidden">
+        <span class="empty-number">01</span>
+        <h2>从一部真正想看懂的电影开始</h2>
+        <p>建立影片项目后，每一场都会自动编号并保存在这里。</p>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <aside class="scene-sidebar">
+        <div class="project-heading">
+          <button id="backToProjects" class="text-button" type="button">← 所有影片</button>
+          <h2 id="projectTitleDisplay"></h2>
+          <p id="projectMetaDisplay"></p>
+        </div>
+        <div class="workspace-tabs" role="tablist" aria-label="工作模式">
+          <button class="workspace-tab active" data-workspace-tab="scenes" type="button">逐场拉片</button>
+          <button class="workspace-tab" data-workspace-tab="review" type="button">全片复盘</button>
+        </div>
+        <button id="newSceneButton" class="button primary full" type="button">＋ 新建场次</button>
+        <div id="sceneList" class="scene-list"></div>
+        <div class="sidebar-footer">
+          <button id="exportProjectButton" class="button dark full" type="button">导出整部影片</button>
+          <button id="editProjectButton" class="button ghost full" type="button">影片设置</button>
+        </div>
+      </aside>
+
+      <section id="sceneWorkspace" class="scene-workspace">
+        <div id="noScene" class="empty-scene hidden">
+          <span>场</span>
+          <h2>新建一个场次，开始第二遍观看</h2>
+          <p>不用一次想透。先留下事件与行动，回看时再补发现。</p>
+        </div>
+
+        <div id="sceneEditor" class="editor-shell hidden">
+          <div class="editor-topline">
+            <div>
+              <p id="sceneNumberLabel" class="eyebrow"></p>
+              <h2>场次记录</h2>
+            </div>
+            <div class="editor-actions">
+              <label class="complete-toggle">
+                <input id="sceneComplete" type="checkbox">
+                <span>本场完成</span>
+              </label>
+              <button id="exportSceneMarkdown" class="button ghost" type="button">导出 Markdown</button>
+              <button id="deleteSceneButton" class="button danger-text" type="button">删除场次</button>
+            </div>
+          </div>
+
+          <div class="editor-layout">
+            <form id="sceneForm" class="scene-form" autocomplete="off">
+              <section class="form-card">
+                <div class="section-heading">
+                  <span>01</span>
+                  <div>
+                    <h3>场景识别</h3>
+                    <p>先准确记录这是一场什么戏。</p>
+                  </div>
+                </div>
+                <div class="field-grid two">
+                  <label class="field span-2">场景标题
+                    <input id="sceneTitle" data-field="title" type="text" placeholder="例如：马蒂接到妈妈的电话" maxlength="70">
+                  </label>
+                  <label class="field">时间点
+                    <input id="sceneTimecode" data-field="timecode" type="text" placeholder="00:12:30">
+                  </label>
+                  <label class="field">时长
+                    <input id="sceneDuration" data-field="duration" type="text" placeholder="约 2 分钟">
+                  </label>
+                  <label class="field">场景类型
+                    <select id="sceneSetting" data-field="setting">
+                      <option value="">暂不判断</option>
+                      <option>内 · 日</option><option>内 · 夜</option><option>内 · 晨</option><option>内 · 昏</option>
+                      <option>外 · 日</option><option>外 · 夜</option><option>外 · 晨</option><option>外 · 昏</option>
+                      <option>混合场景</option>
+                    </select>
+                  </label>
+                  <label class="field">价值走向
+                    <select id="sceneValueDirection" data-field="valueDirection">
+                      <option value="">暂不判断</option>
+                      <option>正向</option><option>负向</option><option>混合</option><option>过场</option>
+                    </select>
+                  </label>
+                  <fieldset class="field span-2 tag-field">
+                    <legend>戏剧功能（可多选）</legend>
+                    <div id="functionChoices" class="choice-row"></div>
+                  </fieldset>
+                  <label class="field span-2">一句话概括
+                    <textarea id="sceneSummary" data-field="summary" rows="3" placeholder="这一场里，谁做了什么，局势怎样改变？" maxlength="180"></textarea>
+                    <small class="counter" data-counter-for="sceneSummary"></small>
+                  </label>
+                </div>
+              </section>
+
+              <section class="form-card">
+                <div class="section-heading">
+                  <span>02</span>
+                  <div>
+                    <h3>场景截图</h3>
+                    <p>默认一张主截图，需要时最多增加到三张。</p>
+                  </div>
+                </div>
+                <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="粘贴、拖入或选择场景截图">
+                  <strong>粘贴或拖入截图</strong>
+                  <span>也可以点击选择图片</span>
+                  <input id="screenshotInput" type="file" accept="image/*" multiple>
+                </div>
+                <div id="screenshotList" class="screenshot-list"></div>
+              </section>
+
+              <section class="form-card">
+                <div class="section-heading with-action">
+                  <span>03</span>
+                  <div>
+                    <h3>人物行动线</h3>
+                    <p>把并行任务拆开，每条都保留完整的因果。</p>
+                  </div>
+                  <button id="addActionLine" class="button small ghost" type="button">＋ 增加行动线</button>
+                </div>
+                <div id="actionLines" class="action-lines"></div>
+                <label class="field">观众新知道了什么
+                  <textarea id="sceneKnowledge" data-field="knowledge" rows="4" placeholder="人物、关系、世界、威胁或伏笔……" maxlength="420"></textarea>
+                  <small class="counter" data-counter-for="sceneKnowledge"></small>
+                </label>
+              </section>
+
+              <section class="form-card optional-card">
+                <div class="section-heading with-switch">
+                  <span>04</span>
+                  <div>
+                    <h3>我的发现</h3>
+                    <p>这部分可选；有真正值得带走的东西时再写。</p>
+                  </div>
+                  <label class="switch">
+                    <input id="includeInsightCard" data-field="includeInsightCard" type="checkbox">
+                    <span></span>
+                    <b>生成第三张</b>
+                  </label>
+                </div>
+                <div id="insightFields" class="insight-fields muted-fields">
+                  <label class="field">细节分析
+                    <textarea id="sceneDetails" data-field="details" rows="4" placeholder="值得记录的台词、表演、视听细节，或它为什么有效。" maxlength="500"></textarea>
+                    <small class="counter" data-counter-for="sceneDetails"></small>
+                  </label>
+                  <label class="field">回看补记
+                    <textarea id="sceneReviewNote" data-field="reviewNote" rows="4" placeholder="看到后面以后，反过来发现了什么联系？" maxlength="500"></textarea>
+                    <small class="counter" data-counter-for="sceneReviewNote"></small>
+                  </label>
+                  <label class="field">对自己创作的启发
+                    <textarea id="sceneInspiration" data-field="inspiration" rows="4" placeholder="这个技法可以怎样转译到自己的小说或剧本？" maxlength="500"></textarea>
+                    <small class="counter" data-counter-for="sceneInspiration"></small>
+                  </label>
+                </div>
+              </section>
+
+              <details class="form-card notes-card">
+                <summary>
+                  <span>随手备注</span>
+                  <small>默认折叠，不进入图片和 Markdown</small>
+                </summary>
+                <label class="field notes-field">
+                  <textarea id="sceneScratchNotes" data-field="scratchNotes" rows="6" placeholder="先记下零散感觉，不必立刻整理。"></textarea>
+                </label>
+              </details>
+            </form>
+
+            <aside class="preview-panel">
+              <div class="preview-heading">
+                <div>
+                  <p class="eyebrow">发布预览</p>
+                  <h3 id="previewCount">两张基础卡</h3>
+                </div>
+                <button id="downloadAllCards" class="button dark" type="button">下载全部图片</button>
+              </div>
+              <div id="cardPreviews" class="card-previews">
+                <article class="preview-item">
+                  <div class="canvas-wrap"><canvas id="cardCanvas1" width="1080" height="1440"></canvas></div>
+                  <button class="button ghost full download-card" data-card="1" type="button">下载第一张</button>
+                </article>
+                <article class="preview-item">
+                  <div class="canvas-wrap"><canvas id="cardCanvas2" width="1080" height="1440"></canvas></div>
+                  <button class="button ghost full download-card" data-card="2" type="button">下载第二张</button>
+                </article>
+                <article id="thirdCardPreview" class="preview-item hidden">
+                  <div class="canvas-wrap"><canvas id="cardCanvas3" width="1080" height="1440"></canvas></div>
+                  <button class="button ghost full download-card" data-card="3" type="button">下载第三张</button>
+                </article>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="reviewWorkspace" class="review-workspace hidden">
+          <div class="review-header">
+            <div>
+              <p class="eyebrow">拉完全片后再回来</p>
+              <h2>全片结构复盘</h2>
+              <p>统一补充幕与节拍位置，也可以回头校正场景功能和价值走向。</p>
+            </div>
+            <button id="markProjectComplete" class="button dark" type="button">标记全片拉完</button>
+          </div>
+          <div class="review-table-wrap">
+            <table class="review-table">
+              <thead><tr><th>场</th><th>标题</th><th>功能</th><th>价值</th><th>幕</th><th>节拍位置</th><th></th></tr></thead>
+              <tbody id="reviewTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="projectDialog" class="dialog">
+    <form id="projectForm" method="dialog">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">影片项目</p><h2 id="projectDialogTitle">新建影片</h2></div>
+        <button id="closeProjectDialog" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+      <input id="projectIdInput" type="hidden">
+      <label class="field">片名
+        <input id="projectTitle" type="text" required placeholder="例如：至尊马蒂" maxlength="60">
+      </label>
+      <div class="field-grid two">
+        <label class="field">导演／主创（可选）
+          <input id="projectCreator" type="text" placeholder="例如：乔什·萨弗迪" maxlength="60">
+        </label>
+        <label class="field">年份（可选）
+          <input id="projectYear" type="text" inputmode="numeric" placeholder="2025" maxlength="4">
+        </label>
+      </div>
+      <label class="field">一句话学习目标（可选）
+        <textarea id="projectGoal" rows="3" placeholder="这次最想看清什么？" maxlength="180"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button id="deleteProjectButton" class="button danger-text hidden" type="button">删除整个项目</button>
+        <span></span>
+        <button class="button primary" type="submit">保存影片项目</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="actionLineTemplate">
+    <article class="action-line">
+      <div class="action-line-head">
+        <strong>行动线 <span class="action-index"></span></strong>
+        <button class="remove-action text-button danger-text" type="button">移除</button>
+      </div>
+      <div class="field-grid two">
+        <label class="field">谁
+          <input data-action-field="who" type="text" placeholder="行动主体" maxlength="80">
+        </label>
+        <label class="field">要
+          <input data-action-field="want" type="text" placeholder="他想得到什么" maxlength="120">
+        </label>
+        <label class="field span-2">做
+          <textarea data-action-field="do" rows="2" placeholder="他具体采取什么手段" maxlength="220"></textarea>
+        </label>
+        <label class="field">阻
+          <textarea data-action-field="obstacle" rows="2" placeholder="谁或什么阻止他" maxlength="180"></textarea>
+        </label>
+        <label class="field">变
+          <textarea data-action-field="change" rows="2" placeholder="这条行动线最后怎样" maxlength="180"></textarea>
+        </label>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
