@@ -186,6 +186,7 @@ button { color: inherit; }
 .field-grid { display: grid; gap: 16px; }
 .field-grid.two { grid-template-columns: 1fr 1fr; }
 .span-2 { grid-column: span 2; }
+.time-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
 .field { display: grid; gap: 7px; min-width: 0; color: #4f4a43; font-size: 13px; font-weight: 700; }
 .field input, .field textarea, .field select {
   width: 100%;
@@ -199,6 +200,9 @@ button { color: inherit; }
 }
 .field textarea { resize: vertical; min-height: 46px; }
 .field input::placeholder, .field textarea::placeholder { color: #a8a095; }
+.time-result input { color: var(--sage); background: #f2f1eb; font-weight: 700; }
+.field-hint { min-height: 17px; color: var(--muted); font-size: 11px; font-weight: 450; line-height: 1.45; }
+.field-hint.error { color: var(--danger); }
 .counter { justify-self: end; color: #9b9388; font-weight: 500; }
 .tag-field { border: 0; padding: 0; margin: 0; }
 .tag-field legend { margin-bottom: 8px; }
@@ -295,6 +299,7 @@ button { color: inherit; }
   .editor-actions { flex-wrap: wrap; justify-content: flex-end; }
   .field-grid.two { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
+  .time-fields { grid-template-columns: 1fr; }
   .section-heading.with-action, .section-heading.with-switch { grid-template-columns: 30px 1fr; }
   .section-heading.with-action .button, .section-heading.with-switch .switch { grid-column: 2; justify-self: start; }
   .card-previews { grid-template-columns: 1fr; }

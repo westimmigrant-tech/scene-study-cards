@@ -103,12 +103,18 @@
                   <label class="field span-2">场景标题
                     <input id="sceneTitle" data-field="title" type="text" placeholder="例如：马蒂接到妈妈的电话" maxlength="70">
                   </label>
-                  <label class="field">时间点
-                    <input id="sceneTimecode" data-field="timecode" type="text" placeholder="00:12:30">
-                  </label>
-                  <label class="field">时长
-                    <input id="sceneDuration" data-field="duration" type="text" placeholder="约 2 分钟">
-                  </label>
+                  <div class="time-fields span-2">
+                    <label class="field">开始时间
+                      <input id="sceneStartTime" data-field="startTime" type="text" inputmode="numeric" placeholder="例如 00:00 或 00:00:00">
+                    </label>
+                    <label class="field">结束时间
+                      <input id="sceneEndTime" data-field="endTime" type="text" inputmode="numeric" placeholder="例如 04:00 或 00:04:00">
+                    </label>
+                    <label class="field time-result">自动时长
+                      <input id="sceneDuration" type="text" placeholder="填写起止时间后自动计算" readonly>
+                      <small id="sceneDurationHint" class="field-hint" aria-live="polite"></small>
+                    </label>
+                  </div>
                   <label class="field">场景类型
                     <select id="sceneSetting" data-field="setting">
                       <option value="">暂不判断</option>
@@ -307,6 +313,6 @@
     </article>
   </template>
 
-  <script src="app.js?v=20260812-2"></script>
+  <script src="app.js?v=20260812-3"></script>
 </body>
 </html>

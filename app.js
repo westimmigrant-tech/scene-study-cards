@@ -34,12 +34,79 @@ function newActionLine() {
 
 function newScene(number) {
   return {
-    id: uid(), number, title: "", timecode: "", duration: "", setting: "",
+    id: uid(), number, title: "", startTime: "", endTime: "", duration: "", setting: "",
     valueDirection: "", functions: [], summary: "", screenshots: [],
     actionLines: [newActionLine()], knowledge: "", includeInsightCard: false,
     details: "", reviewNote: "", inspiration: "", scratchNotes: "",
     complete: false, act: "", beat: "", createdAt: now(), updatedAt: now(),
   };
+}
+
+function ensureSceneTimeFields(scene) {
+  if (!("startTime" in scene)) scene.startTime = "";
+  if (!("endTime" in scene)) scene.endTime = scene.timecode || "";
+  if (!("duration" in scene)) scene.duration = "";
+}
+
+function normalizeTimeFields(workspace) {
+  workspace.projects?.forEach((project) => project.scenes?.forEach(ensureSceneTimeFields));
+}
+
+function parseTimecode(value) {
+  const parts = String(value || "").trim().replace(/：/g, ":").split(":");
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const numbers = parts.map(Number);
+  if (parts.length === 2) {
+    const [minutes, seconds] = numbers;
+    return seconds < 60 ? minutes * 60 + seconds : null;
+  }
+  const [hours, minutes, seconds] = numbers;
+  return minutes < 60 && seconds < 60 ? hours * 3600 + minutes * 60 + seconds : null;
+}
+
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  if (hours) return `约${hours}小时${minutes ? `${minutes}分钟` : ""}${remainingSeconds ? `${remainingSeconds}秒` : ""}`;
+  if (minutes) return `约${minutes}分${remainingSeconds ? `${remainingSeconds}秒` : "钟"}`;
+  return `约${remainingSeconds}秒`;
+}
+
+function timeRangeResult(scene) {
+  const start = String(scene.startTime || "").trim();
+  const end = String(scene.endTime || "").trim();
+  if (!start && !end) return { label: "", hint: "填写起止时间后自动计算", error: false };
+  if (!start || !end) return { label: "", hint: `还需填写${start ? "结束" : "开始"}时间`, error: false };
+  const startSeconds = parseTimecode(start);
+  const endSeconds = parseTimecode(end);
+  if (startSeconds === null || endSeconds === null) return { label: "", hint: "请使用 4:00 或 00:04:00 这样的格式", error: true };
+  if (endSeconds <= startSeconds) return { label: "", hint: "结束时间需要晚于开始时间", error: true };
+  return { label: formatDuration(endSeconds - startSeconds), hint: "已根据起止时间自动计算", error: false };
+}
+
+function durationLabel(scene) {
+  return timeRangeResult(scene).label || scene.duration || "";
+}
+
+function timeRangeLabel(scene) {
+  const start = String(scene.startTime || "").trim();
+  const end = String(scene.endTime || "").trim();
+  if (start && end) return `${start}—${end}`;
+  if (start) return `开始 ${start}`;
+  if (end) return `结束 ${end}`;
+  return "时间未记";
+}
+
+function updateDurationField(scene) {
+  const result = timeRangeResult(scene);
+  if (result.label) scene.duration = result.label;
+  else if (scene.startTime && scene.endTime) scene.duration = "";
+  const legacyDuration = !result.label && (!scene.startTime || !scene.endTime) ? scene.duration : "";
+  $("#sceneDuration").value = result.label || legacyDuration;
+  const hint = $("#sceneDurationHint");
+  hint.textContent = legacyDuration ? "原有时长已保留；补齐起止时间后会自动更新" : result.hint;
+  hint.classList.toggle("error", result.error);
 }
 
 function openDb() {
@@ -170,8 +237,9 @@ function renderSceneEditor() {
   if (!scene) return;
   $("#sceneNumberLabel").textContent = `${padScene(scene.number)} · ${currentProject().title}`;
   $("#sceneComplete").checked = scene.complete;
+  ensureSceneTimeFields(scene);
   const fieldMap = {
-    title: "#sceneTitle", timecode: "#sceneTimecode", duration: "#sceneDuration",
+    title: "#sceneTitle", startTime: "#sceneStartTime", endTime: "#sceneEndTime",
     setting: "#sceneSetting", valueDirection: "#sceneValueDirection", summary: "#sceneSummary",
     knowledge: "#sceneKnowledge", includeInsightCard: "#includeInsightCard", details: "#sceneDetails",
     reviewNote: "#sceneReviewNote", inspiration: "#sceneInspiration", scratchNotes: "#sceneScratchNotes",
@@ -181,6 +249,7 @@ function renderSceneEditor() {
     if (element.type === "checkbox") element.checked = Boolean(scene[key]);
     else element.value = scene[key] || "";
   });
+  updateDurationField(scene);
   renderFunctionChoices(scene);
   renderScreenshots(scene);
   renderActionLines(scene);
@@ -471,7 +540,8 @@ function cardBase(ctx, scene, number, title) {
   ctx.font = "500 21px -apple-system, 'PingFang SC', sans-serif";
   ctx.fillText("拉片卡 · 场景学习工作台", 76, 1374);
   ctx.textAlign = "right";
-  ctx.fillText(`${scene.timecode || "时间点未记"}${scene.duration ? `  ·  ${scene.duration}` : ""}`, 1004, 1374);
+  const footerDuration = durationLabel(scene);
+  ctx.fillText(`${timeRangeLabel(scene)}${footerDuration ? `  ·  ${footerDuration}` : ""}`, 1004, 1374);
   ctx.textAlign = "left";
 }
 
@@ -624,8 +694,9 @@ function sceneMarkdown(project, scene) {
 场景类型: ${yamlString(scene.setting)}
 节拍位置: ${yamlString(scene.beat)}
 人物: [${people.map(yamlString).join(", ")}]
-时间点: ${yamlString(scene.timecode)}
-时长: ${yamlString(scene.duration)}
+开始时间: ${yamlString(scene.startTime)}
+结束时间: ${yamlString(scene.endTime)}
+时长: ${yamlString(durationLabel(scene))}
 完成: ${scene.complete ? "true" : "false"}
 tags:
   - 拉片
@@ -749,6 +820,7 @@ async function restoreBackup(file) {
     if (!restored || !Array.isArray(restored.projects)) throw new Error("invalid");
     if (!confirm("恢复备份会替换当前浏览器中的全部拉片数据。确定继续吗？")) return;
     Object.assign(state, restored);
+    normalizeTimeFields(state);
     state.activeProjectId = null; state.activeSceneId = null;
     await persistState(); renderApp(); showToast("备份已恢复");
   } catch { showToast("无法读取这个备份文件"); }
@@ -778,6 +850,7 @@ function bindEvents() {
     const scene = currentScene(); if (!scene) return;
     const field = event.target.dataset.field;
     if (field) scene[field] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+    if (field === "startTime" || field === "endTime") updateDurationField(scene);
     const actionField = event.target.dataset.actionField;
     if (actionField) {
       const line = scene.actionLines.find((item) => item.id === event.target.closest(".action-line").dataset.actionId);
@@ -819,7 +892,10 @@ function renderWorkspaceHeadingOnly() {
 async function init() {
   try {
     const saved = await loadState();
-    if (saved?.projects) Object.assign(state, saved);
+    if (saved?.projects) {
+      Object.assign(state, saved);
+      normalizeTimeFields(state);
+    }
   } catch (error) { console.error(error); showToast("本机数据读取失败，请使用备份恢复"); }
   state.activeProjectId = null;
   state.activeSceneId = null;
