@@ -133,12 +133,15 @@ function renderWorkspace() {
   $("#projectTitleDisplay").textContent = project.title;
   $("#projectMetaDisplay").textContent = `${project.scenes.length} 场 · ${project.scenes.filter((scene) => scene.complete).length} 场完成${project.exportedAt && project.updatedAt > project.exportedAt ? " · 有尚未导出的更新" : ""}`;
   $$(".workspace-tab").forEach((button) => button.classList.toggle("active", button.dataset.workspaceTab === activeWorkspaceTab));
-  $("#sceneWorkspace").classList.toggle("hidden", activeWorkspaceTab !== "scenes");
+  $("#sceneWorkspace").classList.remove("hidden");
   $("#reviewWorkspace").classList.toggle("hidden", activeWorkspaceTab !== "review");
   $("#newSceneButton").classList.toggle("hidden", activeWorkspaceTab !== "scenes");
   renderSceneList();
-  if (activeWorkspaceTab === "review") renderReview();
-  else renderSceneEditor();
+  if (activeWorkspaceTab === "review") {
+    $("#noScene").classList.add("hidden");
+    $("#sceneEditor").classList.add("hidden");
+    renderReview();
+  } else renderSceneEditor();
 }
 
 function renderSceneList() {
