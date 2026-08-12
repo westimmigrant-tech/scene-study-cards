@@ -570,8 +570,15 @@ async function drawCard3(scene) {
     ctx.fillText(`${String(index + 1).padStart(2, "0")}  ${title}`, 76, y);
     ctx.fillStyle = "#20201d";
     ctx.font = index === 2 ? "550 29px -apple-system, 'PingFang SC', sans-serif" : "450 27px -apple-system, 'PingFang SC', sans-serif";
-    y = drawLines(ctx, body || "—", 76, y + 53, 928, 43, 5) + 50;
-    if (index < 2) { ctx.strokeStyle = "#d9d2c5"; ctx.beginPath(); ctx.moveTo(76, y - 16); ctx.lineTo(1004, y - 16); ctx.stroke(); }
+    const bodyBottom = drawLines(ctx, body || "—", 76, y + 53, 928, 43, 5);
+    if (index < 2) {
+      const dividerY = bodyBottom + 12;
+      ctx.strokeStyle = "#d9d2c5";
+      ctx.beginPath(); ctx.moveTo(76, dividerY); ctx.lineTo(1004, dividerY); ctx.stroke();
+      y = dividerY + 46;
+    } else {
+      y = bodyBottom;
+    }
   });
 }
 
