@@ -2,19 +2,23 @@ const DB_NAME = "scene-study-cards";
 const DB_VERSION = 1;
 const STORE_NAME = "workspace";
 const STATE_KEY = "main";
+const RECOVERY_KEY = "scene-study-cards:pending-state-v1";
+const BACKUP_VERSION = 1;
 const FUNCTION_OPTIONS = ["铺垫", "推进", "转折", "收束", "过场", "高潮"];
 const ACT_OPTIONS = ["", "一", "二上", "二下", "三"];
 const BEAT_OPTIONS = ["", "开场", "激励事件", "第一幕转折", "中点", "第二幕转折", "高潮", "结局"];
 
 const state = {
-  version: 1,
+  version: BACKUP_VERSION,
   projects: [],
   activeProjectId: null,
   activeSceneId: null,
+  persistedAt: 0,
 };
 
 let activeWorkspaceTab = "scenes";
 let saveTimer = null;
+let saveRevision = 0;
 let toastTimer = null;
 let renderToken = 0;
 
@@ -50,6 +54,81 @@ function ensureSceneTimeFields(scene) {
 
 function normalizeTimeFields(workspace) {
   workspace.projects?.forEach((project) => project.scenes?.forEach(ensureSceneTimeFields));
+}
+
+function screenshotRecoveryKey(screenshot) {
+  const source = screenshotSource(screenshot);
+  return `${source.length}:${source.slice(0, 32)}:${source.slice(-32)}`;
+}
+
+function recoveryStateSnapshot() {
+  return {
+    version: BACKUP_VERSION,
+    activeProjectId: state.activeProjectId,
+    activeSceneId: state.activeSceneId,
+    projects: state.projects.map((project) => ({
+      ...project,
+      scenes: project.scenes.map((scene) => ({
+        ...scene,
+        screenshots: scene.screenshots.map((screenshot) => ({
+          key: screenshotRecoveryKey(screenshot),
+          ...screenshotPosition(screenshot),
+        })),
+      })),
+    })),
+  };
+}
+
+function writeRecoveryJournal() {
+  try {
+    localStorage.setItem(RECOVERY_KEY, JSON.stringify({
+      version: 1,
+      createdAt: Date.now(),
+      state: recoveryStateSnapshot(),
+    }));
+  } catch (error) {
+    console.warn("无法写入待保存恢复记录", error);
+  }
+}
+
+function readRecoveryJournal() {
+  try {
+    const recovery = JSON.parse(localStorage.getItem(RECOVERY_KEY) || "null");
+    if (recovery?.version !== 1 || !Array.isArray(recovery.state?.projects)) return null;
+    return recovery;
+  } catch (error) {
+    console.warn("待保存恢复记录已损坏", error);
+    localStorage.removeItem(RECOVERY_KEY);
+    return null;
+  }
+}
+
+function clearRecoveryJournal() {
+  try { localStorage.removeItem(RECOVERY_KEY); }
+  catch (error) { console.warn("无法清除待保存恢复记录", error); }
+}
+
+function mergeRecoveryState(saved, recovered) {
+  const savedProjects = new Map((saved?.projects || []).map((project) => [project.id, project]));
+  return {
+    ...recovered,
+    persistedAt: saved?.persistedAt || 0,
+    projects: recovered.projects.map((project) => {
+      const savedScenes = new Map((savedProjects.get(project.id)?.scenes || []).map((scene) => [scene.id, scene]));
+      return {
+        ...project,
+        scenes: project.scenes.map((scene) => {
+          const savedScreenshots = new Map((savedScenes.get(scene.id)?.screenshots || []).map((screenshot) => [screenshotRecoveryKey(screenshot), screenshot]));
+          const screenshots = (scene.screenshots || []).map((reference) => {
+            const savedScreenshot = savedScreenshots.get(reference.key);
+            if (!savedScreenshot) return null;
+            return { src: screenshotSource(savedScreenshot), x: reference.x ?? 50, y: reference.y ?? 50 };
+          }).filter(Boolean);
+          return { ...scene, screenshots };
+        }),
+      };
+    }),
+  };
 }
 
 function parseTimecode(value) {
@@ -131,23 +210,40 @@ async function loadState() {
 }
 
 async function persistState() {
+  const revision = saveRevision;
+  state.persistedAt = Date.now();
+  const snapshot = structuredClone(state);
   const db = await openDb();
   await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put(structuredClone(state), STATE_KEY);
+    tx.objectStore(STORE_NAME).put(snapshot, STATE_KEY);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
   });
+  if (revision === saveRevision) clearRecoveryJournal();
   $("#saveStatus").textContent = "已自动保存到本机";
 }
 
 function scheduleSave() {
   $("#saveStatus").textContent = "正在保存…";
   clearTimeout(saveTimer);
+  saveRevision += 1;
+  writeRecoveryJournal();
   saveTimer = setTimeout(async () => {
+    saveTimer = null;
     try { await persistState(); }
     catch (error) { console.error(error); showToast("保存失败，请立即导出备份"); }
   }, 350);
+}
+
+function flushPendingState() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  persistState().catch((error) => {
+    console.error(error);
+    showToast("保存失败；下次打开时会尝试恢复刚才的输入");
+  });
 }
 
 function showToast(message) {
@@ -180,6 +276,8 @@ function renderProjects() {
       const card = document.createElement("article");
       card.className = "project-card";
       card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `打开影片项目：${project.title}`);
       card.innerHTML = `
         <span class="project-card-index">${String(index + 1).padStart(2, "0")}</span>
         <div>
@@ -188,27 +286,35 @@ function renderProjects() {
           <div class="progress-track"><i style="width:${percent}%"></i></div>
           <div class="project-card-foot"><span>${total} 场 · ${completed} 场完成</span><span>${displayDate(project.updatedAt)} 更新</span></div>
         </div>`;
-      const open = () => { state.activeProjectId = project.id; state.activeSceneId = project.scenes[0]?.id || null; renderApp(); scheduleSave(); };
+      const open = () => { state.activeProjectId = project.id; state.activeSceneId = project.scenes[0]?.id || null; activeWorkspaceTab = "scenes"; renderApp(); scheduleSave(); };
       card.addEventListener("click", open);
-      card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") open(); });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open();
+      });
       grid.append(card);
     });
 }
 
 function renderWorkspace() {
   const project = currentProject();
+  const showingScenes = activeWorkspaceTab === "scenes";
   $("#projectTitleDisplay").textContent = project.title;
   $("#projectMetaDisplay").textContent = `${project.scenes.length} 场 · ${project.scenes.filter((scene) => scene.complete).length} 场完成${project.exportedAt && project.updatedAt > project.exportedAt ? " · 有尚未导出的更新" : ""}`;
-  $$(".workspace-tab").forEach((button) => button.classList.toggle("active", button.dataset.workspaceTab === activeWorkspaceTab));
+  $$(".workspace-tab").forEach((button) => {
+    const selected = button.dataset.workspaceTab === activeWorkspaceTab;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
   $("#sceneWorkspace").classList.remove("hidden");
-  $("#reviewWorkspace").classList.toggle("hidden", activeWorkspaceTab !== "review");
-  $("#newSceneButton").classList.toggle("hidden", activeWorkspaceTab !== "scenes");
+  $("#scenesPanel").classList.toggle("hidden", !showingScenes);
+  $("#reviewWorkspace").classList.toggle("hidden", showingScenes);
+  $("#newSceneButton").classList.toggle("hidden", !showingScenes);
   renderSceneList();
-  if (activeWorkspaceTab === "review") {
-    $("#noScene").classList.add("hidden");
-    $("#sceneEditor").classList.add("hidden");
-    renderReview();
-  } else renderSceneEditor();
+  if (showingScenes) renderSceneEditor();
+  else renderReview();
 }
 
 function renderSceneList() {
@@ -400,9 +506,11 @@ function deleteScene() {
   const project = currentProject();
   const scene = currentScene();
   if (!scene || !confirm(`确定删除 ${padScene(scene.number)}「${scene.title || "未命名场次"}」吗？此操作无法撤销。`)) return;
+  const orderedScenes = project.scenes.slice().sort((a, b) => a.number - b.number);
+  const deletedIndex = orderedScenes.findIndex((item) => item.id === scene.id);
   project.scenes = project.scenes.filter((item) => item.id !== scene.id);
   project.scenes.sort((a, b) => a.number - b.number).forEach((item, index) => { item.number = index + 1; });
-  state.activeSceneId = project.scenes[0]?.id || null;
+  state.activeSceneId = project.scenes[Math.min(deletedIndex, project.scenes.length - 1)]?.id || null;
   project.updatedAt = now();
   renderWorkspace();
   scheduleSave();
@@ -427,10 +535,11 @@ async function addScreenshots(files) {
   if (!room) return showToast("每场最多保留三张截图");
   const selected = images.slice(0, room);
   for (const file of selected) scene.screenshots.push({ src: await fileToOptimizedDataUrl(file), x: 50, y: 50 });
-  if (images.length > room) showToast("已保留前三张截图");
+  if (images.length > room) showToast(`本次已添加 ${selected.length} 张，另有 ${images.length - selected.length} 张因数量上限未添加`);
   touchScene(scene);
   renderScreenshots(scene);
   renderCards();
+  flushPendingState();
 }
 
 function fileToOptimizedDataUrl(file) {
@@ -730,7 +839,11 @@ ${scene.inspiration || ""}
 }
 
 function overviewMarkdown(project) {
-  const rows = project.scenes.slice().sort((a, b) => a.number - b.number).map((scene) => `| [[${padScene(scene.number)}]] | ${scene.title || "未命名场次"} | ${scene.functions.join(" / ") || "—"} | ${scene.valueDirection || "—"} | ${scene.act || "—"} | ${scene.beat || "—"} |`).join("\n");
+  const cell = (value, fallback = "—") => {
+    const text = String(value ?? "").trim() || fallback;
+    return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  };
+  const rows = project.scenes.slice().sort((a, b) => a.number - b.number).map((scene) => `| [[${padScene(scene.number)}]] | ${cell(scene.title, "未命名场次")} | ${cell(scene.functions.join(" / "))} | ${cell(scene.valueDirection)} | ${cell(scene.act)} | ${cell(scene.beat)} |`).join("\n");
   return `# ${project.title} · 拉片总览
 
 ${project.creator || project.year ? `> ${[project.year, project.creator].filter(Boolean).join(" · ")}\n` : ""}${project.goal ? `> 学习目标：${project.goal}\n` : ""}
@@ -744,7 +857,7 @@ ${rows || "| — | 尚无场次 | — | — | — | — |"}
 
 function exportSingleScene() {
   const project = currentProject(), scene = currentScene();
-  downloadBlob(new Blob([sceneMarkdown(project, scene)], { type: "text/markdown;charset=utf-8" }), `${padScene(scene.number)}.md`);
+  downloadBlob(new Blob([sceneMarkdown(project, scene)], { type: "text/markdown;charset=utf-8" }), `${safeFileName(project.title)}-${padScene(scene.number)}.md`);
   showToast("已导出单场 Markdown");
 }
 
@@ -757,7 +870,7 @@ async function exportWholeProject() {
       files.push({ name: `${safeFileName(project.title)}/assets/${padScene(scene.number)}-${index + 1}.jpg`, data: dataUrlToBytes(screenshotSource(screenshot)) });
     });
   });
-  files.push({ name: `${safeFileName(project.title)}/拉片卡数据备份.json`, data: JSON.stringify({ version: 1, project }, null, 2) });
+  files.push({ name: `${safeFileName(project.title)}/拉片卡数据备份.json`, data: JSON.stringify({ version: BACKUP_VERSION, project }, null, 2) });
   const zip = createZip(files);
   downloadBlob(zip, `${safeFileName(project.title)}-Obsidian归档.zip`);
   project.exportedAt = now();
@@ -814,16 +927,43 @@ function exportBackup() {
   showToast("已导出完整数据备份");
 }
 
+function parseBackupPayload(restored) {
+  if (!restored || typeof restored !== "object") throw new Error("无法读取这个备份文件");
+  if (restored.version !== BACKUP_VERSION) throw new Error(`暂不支持版本 ${restored.version ?? "未知"} 的备份`);
+  if (Array.isArray(restored.projects) && restored.projects.every((project) => project && Array.isArray(project.scenes))) {
+    return { type: "full", projects: restored.projects };
+  }
+  if (restored.project && Array.isArray(restored.project.scenes)) return { type: "project", project: restored.project };
+  throw new Error("这个文件不是完整备份或单影片备份");
+}
+
 async function restoreBackup(file) {
   try {
     const restored = JSON.parse(await file.text());
-    if (!restored || !Array.isArray(restored.projects)) throw new Error("invalid");
-    if (!confirm("恢复备份会替换当前浏览器中的全部拉片数据。确定继续吗？")) return;
-    Object.assign(state, restored);
+    const backup = parseBackupPayload(restored);
+    if (backup.type === "full") {
+      if (!confirm("恢复完整备份会替换当前浏览器中的全部拉片数据。确定继续吗？")) return;
+      state.version = BACKUP_VERSION;
+      state.projects = backup.projects;
+    } else {
+      const existingIndex = state.projects.findIndex((project) => project.id === backup.project.id);
+      const action = existingIndex >= 0 ? "替换当前已有的同一项目" : "加入当前工作台";
+      if (!confirm(`将单影片备份「${backup.project.title || "未命名影片"}」${action}，其他影片不会受影响。确定继续吗？`)) return;
+      if (existingIndex >= 0) state.projects.splice(existingIndex, 1, backup.project);
+      else state.projects.push(backup.project);
+    }
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    saveRevision += 1;
+    state.persistedAt = 0;
     normalizeTimeFields(state);
     state.activeProjectId = null; state.activeSceneId = null;
-    await persistState(); renderApp(); showToast("备份已恢复");
-  } catch { showToast("无法读取这个备份文件"); }
+    activeWorkspaceTab = "scenes";
+    await persistState(); renderApp(); showToast(backup.type === "full" ? "完整备份已恢复" : "单影片备份已导入");
+  } catch (error) {
+    console.error(error);
+    showToast(error instanceof SyntaxError ? "无法读取这个备份文件" : error.message);
+  }
 }
 
 function bindEvents() {
@@ -865,7 +1005,25 @@ function bindEvents() {
   $("#dropZone").addEventListener("dragleave", (event) => event.currentTarget.classList.remove("dragging"));
   $("#dropZone").addEventListener("drop", (event) => { event.preventDefault(); event.currentTarget.classList.remove("dragging"); addScreenshots(event.dataTransfer.files); });
   document.addEventListener("paste", (event) => { if (!currentScene() || activeWorkspaceTab !== "scenes") return; const files = [...event.clipboardData.files]; if (files.some((file) => file.type.startsWith("image/"))) { event.preventDefault(); addScreenshots(files); } });
-  $$(".workspace-tab").forEach((button) => button.addEventListener("click", () => { activeWorkspaceTab = button.dataset.workspaceTab; renderWorkspace(); }));
+  const workspaceTabs = $$(".workspace-tab");
+  const activateWorkspaceTab = (button, moveFocus = false) => {
+    activeWorkspaceTab = button.dataset.workspaceTab;
+    renderWorkspace();
+    if (moveFocus) button.focus();
+  };
+  workspaceTabs.forEach((button, index) => {
+    button.addEventListener("click", () => activateWorkspaceTab(button));
+    button.addEventListener("keydown", (event) => {
+      let targetIndex = null;
+      if (event.key === "ArrowRight") targetIndex = (index + 1) % workspaceTabs.length;
+      if (event.key === "ArrowLeft") targetIndex = (index - 1 + workspaceTabs.length) % workspaceTabs.length;
+      if (event.key === "Home") targetIndex = 0;
+      if (event.key === "End") targetIndex = workspaceTabs.length - 1;
+      if (targetIndex === null) return;
+      event.preventDefault();
+      activateWorkspaceTab(workspaceTabs[targetIndex], true);
+    });
+  });
   $("#reviewTableBody").addEventListener("change", (event) => {
     const field = event.target.dataset.reviewField; if (!field) return;
     const scene = currentProject().scenes.find((item) => item.id === event.target.closest("tr").dataset.sceneId);
@@ -882,6 +1040,8 @@ function bindEvents() {
   $("#exportProjectButton").addEventListener("click", exportWholeProject);
   $("#backupButton").addEventListener("click", exportBackup);
   $("#restoreInput").addEventListener("change", (event) => { if (event.target.files[0]) restoreBackup(event.target.files[0]); event.target.value = ""; });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPendingState(); });
+  window.addEventListener("pagehide", flushPendingState);
 }
 
 function renderWorkspaceHeadingOnly() {
@@ -890,17 +1050,32 @@ function renderWorkspaceHeadingOnly() {
 }
 
 async function init() {
+  let recoveredPendingChanges = false;
   try {
     const saved = await loadState();
-    if (saved?.projects) {
-      Object.assign(state, saved);
+    const recovery = readRecoveryJournal();
+    const shouldRecover = recovery && (!saved?.persistedAt || recovery.createdAt > saved.persistedAt);
+    const workspace = shouldRecover ? mergeRecoveryState(saved, recovery.state) : saved;
+    if (workspace?.projects) {
+      Object.assign(state, workspace);
       normalizeTimeFields(state);
     }
+    recoveredPendingChanges = Boolean(shouldRecover);
+    if (recovery && !shouldRecover) clearRecoveryJournal();
   } catch (error) { console.error(error); showToast("本机数据读取失败，请使用备份恢复"); }
   state.activeProjectId = null;
   state.activeSceneId = null;
   bindEvents();
   renderApp();
+  if (recoveredPendingChanges) {
+    try {
+      await persistState();
+      showToast("已恢复上次关闭前尚未保存的输入");
+    } catch (error) {
+      console.error(error);
+      showToast("已恢复输入，但重新保存失败，请立即导出备份");
+    }
+  }
 }
 
 init();

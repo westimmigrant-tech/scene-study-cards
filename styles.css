@@ -97,7 +97,7 @@ button { color: inherit; }
 .button.large { min-height: 52px; padding: 12px 23px; }
 .button.small { min-height: 32px; padding: 5px 12px; font-size: 13px; }
 .button.full { width: 100%; }
-.button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .drop-zone:focus-visible {
+.button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .drop-zone:focus-visible, .project-card:focus-visible, .workspace-tab:focus-visible {
   outline: 3px solid rgba(217, 95, 50, .24);
   outline-offset: 2px;
 }
@@ -126,6 +126,7 @@ button { color: inherit; }
   transition: transform .18s ease, box-shadow .18s ease;
 }
 .project-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+.project-card:focus-visible { transform: translateY(-2px); box-shadow: var(--shadow); }
 .project-card-index { font: 500 52px/1 Georgia, serif; color: var(--orange-soft); }
 .project-card h2 { margin: 0; font: 500 28px/1.2 Georgia, "Songti SC", serif; }
 .project-card p { margin: 9px 0 0; color: var(--muted); line-height: 1.6; }
@@ -207,9 +208,11 @@ button { color: inherit; }
 .tag-field { border: 0; padding: 0; margin: 0; }
 .tag-field legend { margin-bottom: 8px; }
 .choice-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.choice-chip input { position: absolute; opacity: 0; }
+.choice-chip { position: relative; display: inline-block; }
+.choice-chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .choice-chip span { display: block; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #fbf9f3; cursor: pointer; font-size: 12px; }
 .choice-chip input:checked + span { color: #8f351d; border-color: #e3a78b; background: #f8e2d6; }
+.choice-chip input:focus-visible + span { outline: 3px solid rgba(217, 95, 50, .24); outline-offset: 2px; }
 
 .drop-zone { min-height: 112px; display: grid; place-items: center; align-content: center; gap: 5px; position: relative; border: 1.5px dashed #c6bdae; border-radius: 16px; background: #faf7f0; cursor: pointer; }
 .drop-zone.dragging { border-color: var(--orange); background: #f9e9df; }
@@ -235,12 +238,13 @@ button { color: inherit; }
 .muted-fields { opacity: .45; pointer-events: none; }
 .insight-fields { display: grid; gap: 15px; transition: opacity .15s ease; }
 
-.switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.switch input { position: absolute; opacity: 0; }
+.switch { position: relative; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .switch span { width: 38px; height: 22px; padding: 3px; border-radius: 99px; background: #cfc8bc; transition: background .15s; }
 .switch span::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .15s; }
 .switch input:checked + span { background: var(--orange); }
 .switch input:checked + span::after { transform: translateX(16px); }
+.switch input:focus-visible + span { outline: 3px solid rgba(217, 95, 50, .24); outline-offset: 2px; }
 .switch b { font-size: 12px; }
 
 .notes-card { padding: 0; }

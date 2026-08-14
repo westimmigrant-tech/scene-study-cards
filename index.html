@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#20201d">
   <title>拉片卡 · 场景学习工作台</title>
   <meta name="description" content="按影片项目管理场次，拆解人物行动，生成拉片学习卡，并归档到 Obsidian。">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260814-1">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -55,8 +55,8 @@
           <p id="projectMetaDisplay"></p>
         </div>
         <div class="workspace-tabs" role="tablist" aria-label="工作模式">
-          <button class="workspace-tab active" data-workspace-tab="scenes" type="button">逐场拉片</button>
-          <button class="workspace-tab" data-workspace-tab="review" type="button">全片复盘</button>
+          <button id="scenesTab" class="workspace-tab active" data-workspace-tab="scenes" type="button" role="tab" aria-selected="true" aria-controls="scenesPanel">逐场拉片</button>
+          <button id="reviewTab" class="workspace-tab" data-workspace-tab="review" type="button" role="tab" aria-selected="false" aria-controls="reviewWorkspace" tabindex="-1">全片复盘</button>
         </div>
         <button id="newSceneButton" class="button primary full" type="button">＋ 新建场次</button>
         <div id="sceneList" class="scene-list"></div>
@@ -67,6 +67,7 @@
       </aside>
 
       <section id="sceneWorkspace" class="scene-workspace">
+        <div id="scenesPanel" role="tabpanel" aria-labelledby="scenesTab">
         <div id="noScene" class="empty-scene hidden">
           <span>场</span>
           <h2>新建一个场次，开始第二遍观看</h2>
@@ -105,10 +106,10 @@
                   </label>
                   <div class="time-fields span-2">
                     <label class="field">开始时间
-                      <input id="sceneStartTime" data-field="startTime" type="text" inputmode="numeric" placeholder="例如 00:00 或 00:00:00">
+                      <input id="sceneStartTime" data-field="startTime" type="text" inputmode="text" autocapitalize="off" placeholder="例如 00:00 或 00:00:00">
                     </label>
                     <label class="field">结束时间
-                      <input id="sceneEndTime" data-field="endTime" type="text" inputmode="numeric" placeholder="例如 04:00 或 00:04:00">
+                      <input id="sceneEndTime" data-field="endTime" type="text" inputmode="text" autocapitalize="off" placeholder="例如 04:00 或 00:04:00">
                     </label>
                     <label class="field time-result">自动时长
                       <input id="sceneDuration" type="text" placeholder="填写起止时间后自动计算" readonly>
@@ -237,8 +238,9 @@
             </aside>
           </div>
         </div>
+        </div>
 
-        <div id="reviewWorkspace" class="review-workspace hidden">
+        <div id="reviewWorkspace" class="review-workspace hidden" role="tabpanel" aria-labelledby="reviewTab">
           <div class="review-header">
             <div>
               <p class="eyebrow">拉完全片后再回来</p>
@@ -313,6 +315,6 @@
     </article>
   </template>
 
-  <script src="app.js?v=20260812-3"></script>
+  <script src="app.js?v=20260814-1"></script>
 </body>
 </html>
