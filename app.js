@@ -4,7 +4,7 @@ const STORE_NAME = "workspace";
 const STATE_KEY = "main";
 const RECOVERY_KEY = "scene-study-cards:pending-state-v1";
 const BACKUP_VERSION = 1;
-const FUNCTION_OPTIONS = ["铺垫", "推进", "转折", "收束", "过场", "高潮"];
+const FUNCTION_OPTIONS = ["人物建立", "关系建立", "信息揭示", "伏笔", "铺垫", "推进", "转折", "收束", "过场", "高潮"];
 const ACT_OPTIONS = ["", "一", "二上", "二下", "三"];
 const BEAT_OPTIONS = ["", "开场", "激励事件", "第一幕转折", "中点", "第二幕转折", "高潮", "结局"];
 
@@ -39,21 +39,38 @@ function newActionLine() {
 function newScene(number) {
   return {
     id: uid(), number, title: "", startTime: "", endTime: "", duration: "", setting: "",
-    valueDirection: "", functions: [], summary: "", screenshots: [],
-    actionLines: [newActionLine()], knowledge: "", includeInsightCard: false,
+    unitType: "独立场", sequence: "", valueAxis: "", valueFrom: "", valueTo: "", valueDirection: "",
+    functions: [], summary: "", screenshots: [], actionLines: [newActionLine()], knowledge: "", hypothesis: "",
+    includeInsightCard: false,
     details: "", reviewNote: "", inspiration: "", scratchNotes: "",
     complete: false, act: "", beat: "", createdAt: now(), updatedAt: now(),
   };
 }
 
-function ensureSceneTimeFields(scene) {
+function ensureSceneFields(scene) {
   if (!("startTime" in scene)) scene.startTime = "";
   if (!("endTime" in scene)) scene.endTime = scene.timecode || "";
   if (!("duration" in scene)) scene.duration = "";
+  if (!("unitType" in scene)) scene.unitType = "独立场";
+  if (!("sequence" in scene)) scene.sequence = "";
+  if (!("valueAxis" in scene)) scene.valueAxis = "";
+  if (!("valueFrom" in scene)) scene.valueFrom = "";
+  if (!("valueTo" in scene)) scene.valueTo = "";
+  if (!("hypothesis" in scene)) scene.hypothesis = "";
+  if (!Array.isArray(scene.functions)) scene.functions = [];
+  if (!Array.isArray(scene.actionLines) || !scene.actionLines.length) scene.actionLines = [newActionLine()];
+  if (scene.valueDirection === "过场") {
+    scene.valueDirection = "";
+    if (!scene.functions.includes("过场")) scene.functions.push("过场");
+  }
+  scene.screenshots = (scene.screenshots || []).map((screenshot) => {
+    if (typeof screenshot === "string") return { src: screenshot, x: 50, y: 50, fit: "cover" };
+    return { ...screenshot, x: screenshot.x ?? 50, y: screenshot.y ?? 50, fit: screenshot.fit === "contain" ? "contain" : "cover" };
+  });
 }
 
-function normalizeTimeFields(workspace) {
-  workspace.projects?.forEach((project) => project.scenes?.forEach(ensureSceneTimeFields));
+function normalizeWorkspace(workspace) {
+  workspace.projects?.forEach((project) => project.scenes?.forEach(ensureSceneFields));
 }
 
 function screenshotRecoveryKey(screenshot) {
@@ -73,6 +90,7 @@ function recoveryStateSnapshot() {
         screenshots: scene.screenshots.map((screenshot) => ({
           key: screenshotRecoveryKey(screenshot),
           ...screenshotPosition(screenshot),
+          fit: screenshotFit(screenshot),
         })),
       })),
     })),
@@ -122,7 +140,7 @@ function mergeRecoveryState(saved, recovered) {
           const screenshots = (scene.screenshots || []).map((reference) => {
             const savedScreenshot = savedScreenshots.get(reference.key);
             if (!savedScreenshot) return null;
-            return { src: screenshotSource(savedScreenshot), x: reference.x ?? 50, y: reference.y ?? 50 };
+            return { src: screenshotSource(savedScreenshot), x: reference.x ?? 50, y: reference.y ?? 50, fit: reference.fit === "contain" ? "contain" : screenshotFit(savedScreenshot) };
           }).filter(Boolean);
           return { ...scene, screenshots };
         }),
@@ -166,6 +184,54 @@ function timeRangeResult(scene) {
 
 function durationLabel(scene) {
   return timeRangeResult(scene).label || scene.duration || "";
+}
+
+function activeActionLines(scene) {
+  return (scene.actionLines || []).filter((line) => [line.who, line.want, line.do, line.obstacle, line.change].some((value) => String(value || "").trim()));
+}
+
+function sceneValueChangeLabel(scene) {
+  const transition = [scene.valueFrom, scene.valueTo].filter(Boolean).join("→");
+  const change = [scene.valueAxis, transition].filter(Boolean).join("：");
+  return [change, scene.valueDirection].filter(Boolean).join(" · ");
+}
+
+function primarySceneResult(scene) {
+  return activeActionLines(scene).find((line) => String(line.change || "").trim())?.change || "";
+}
+
+function sceneQualityWarnings(scene) {
+  const warnings = [];
+  if (!String(scene.title || "").trim()) warnings.push("场景标题");
+  if (!String(scene.summary || "").trim()) warnings.push("一句话概括");
+  const timeResult = timeRangeResult(scene);
+  if (timeResult.error || !scene.startTime || !scene.endTime) warnings.push("有效起止时间");
+  if (scene.unitType === "序列片段" && !String(scene.sequence || "").trim()) warnings.push("所属序列");
+  const actions = activeActionLines(scene);
+  if (!actions.length) warnings.push("主行动线");
+  actions.forEach((line, index) => {
+    const missing = [];
+    if (!String(line.who || "").trim()) missing.push("谁");
+    if (!String(line.want || "").trim()) missing.push("要");
+    if (!String(line.do || "").trim()) missing.push("做");
+    if (scene.unitType !== "序列片段" && !String(line.change || "").trim()) missing.push("结果");
+    if (missing.length) warnings.push(`行动线 ${index + 1} 的${missing.join("／")}`);
+  });
+  const valueParts = [scene.valueAxis, scene.valueFrom, scene.valueTo, scene.valueDirection].filter((value) => String(value || "").trim()).length;
+  if (valueParts > 0 && valueParts < 3) warnings.push("完整的价值变化");
+  return warnings;
+}
+
+function renderQualityHint(scene) {
+  const hint = $("#sceneQualityHint");
+  const warnings = sceneQualityWarnings(scene);
+  hint.classList.toggle("ready", warnings.length === 0);
+  hint.classList.toggle("warning", warnings.length > 0);
+  if (!warnings.length) {
+    hint.textContent = "本场基础信息已齐，可以标记完成。";
+    return;
+  }
+  hint.textContent = `${scene.complete ? "已标记完成，仍建议检查" : "完成前建议补充"}：${warnings.join("、")}。这些是提醒，不会阻止保存。`;
 }
 
 function timeRangeLabel(scene) {
@@ -343,11 +409,13 @@ function renderSceneEditor() {
   if (!scene) return;
   $("#sceneNumberLabel").textContent = `${padScene(scene.number)} · ${currentProject().title}`;
   $("#sceneComplete").checked = scene.complete;
-  ensureSceneTimeFields(scene);
+  ensureSceneFields(scene);
   const fieldMap = {
     title: "#sceneTitle", startTime: "#sceneStartTime", endTime: "#sceneEndTime",
-    setting: "#sceneSetting", valueDirection: "#sceneValueDirection", summary: "#sceneSummary",
-    knowledge: "#sceneKnowledge", includeInsightCard: "#includeInsightCard", details: "#sceneDetails",
+    unitType: "#sceneUnitType", sequence: "#sceneSequence", setting: "#sceneSetting",
+    valueAxis: "#sceneValueAxis", valueFrom: "#sceneValueFrom", valueTo: "#sceneValueTo",
+    valueDirection: "#sceneValueDirection", summary: "#sceneSummary", knowledge: "#sceneKnowledge",
+    hypothesis: "#sceneHypothesis", includeInsightCard: "#includeInsightCard", details: "#sceneDetails",
     reviewNote: "#sceneReviewNote", inspiration: "#sceneInspiration", scratchNotes: "#sceneScratchNotes",
   };
   Object.entries(fieldMap).forEach(([key, selector]) => {
@@ -361,6 +429,7 @@ function renderSceneEditor() {
   renderActionLines(scene);
   updateInsightState(scene);
   updateCounters();
+  renderQualityHint(scene);
   renderCards();
 }
 
@@ -392,6 +461,7 @@ function renderActionLines(scene) {
 
 function screenshotSource(screenshot) { return typeof screenshot === "string" ? screenshot : screenshot.src; }
 function screenshotPosition(screenshot) { return typeof screenshot === "string" ? { x: 50, y: 50 } : { x: screenshot.x ?? 50, y: screenshot.y ?? 50 }; }
+function screenshotFit(screenshot) { return typeof screenshot === "string" ? "cover" : screenshot.fit === "contain" ? "contain" : "cover"; }
 
 function renderScreenshots(scene) {
   const root = $("#screenshotList");
@@ -399,13 +469,15 @@ function renderScreenshots(scene) {
   scene.screenshots.forEach((screenshot, index) => {
     const source = screenshotSource(screenshot);
     const position = screenshotPosition(screenshot);
+    const fit = screenshotFit(screenshot);
     const item = document.createElement("div");
     item.className = "screenshot-entry";
     item.innerHTML = `
-      <div class="screenshot-thumb"><img src="${source}" alt="场景截图 ${index + 1}" style="object-position:${position.x}% ${position.y}%"><b>${index === 0 ? "主截图" : `补充 ${index}`}</b><button class="remove-shot" type="button" aria-label="删除截图">×</button></div>
+      <div class="screenshot-thumb"><img src="${source}" alt="场景截图 ${index + 1}" style="object-position:${position.x}% ${position.y}%;object-fit:${fit}"><b>${index === 0 ? "主截图" : `补充 ${index}`}</b><button class="remove-shot" type="button" aria-label="删除截图">×</button></div>
       <div class="shot-order"><button class="move-shot" data-direction="-1" type="button" ${index === 0 ? "disabled" : ""}>←</button><span>构图焦点</span><button class="move-shot" data-direction="1" type="button" ${index === scene.screenshots.length - 1 ? "disabled" : ""}>→</button></div>
       <label class="crop-control">横向<input data-crop-axis="x" type="range" min="0" max="100" value="${position.x}"></label>
-      <label class="crop-control">纵向<input data-crop-axis="y" type="range" min="0" max="100" value="${position.y}"></label>`;
+      <label class="crop-control">纵向<input data-crop-axis="y" type="range" min="0" max="100" value="${position.y}"></label>
+      <label class="fit-control">画面方式<select data-fit-mode><option value="cover" ${fit === "cover" ? "selected" : ""}>填满卡片（可裁切）</option><option value="contain" ${fit === "contain" ? "selected" : ""}>完整画面（不裁切）</option></select></label>`;
     $(".remove-shot", item).addEventListener("click", () => {
       scene.screenshots.splice(index, 1);
       touchScene(scene);
@@ -419,11 +491,17 @@ function renderScreenshots(scene) {
       touchScene(scene); renderScreenshots(scene); renderCards();
     }));
     $$('[data-crop-axis]', item).forEach((input) => input.addEventListener("input", () => {
-      if (typeof scene.screenshots[index] === "string") scene.screenshots[index] = { src: scene.screenshots[index], x: 50, y: 50 };
+      if (typeof scene.screenshots[index] === "string") scene.screenshots[index] = { src: scene.screenshots[index], x: 50, y: 50, fit: "cover" };
       scene.screenshots[index][input.dataset.cropAxis] = Number(input.value);
       $("img", item).style.objectPosition = `${scene.screenshots[index].x}% ${scene.screenshots[index].y}%`;
       touchScene(scene); renderCards();
     }));
+    $("[data-fit-mode]", item).addEventListener("change", (event) => {
+      if (typeof scene.screenshots[index] === "string") scene.screenshots[index] = { src: scene.screenshots[index], x: 50, y: 50, fit: "cover" };
+      scene.screenshots[index].fit = event.target.value === "contain" ? "contain" : "cover";
+      $("img", item).style.objectFit = scene.screenshots[index].fit;
+      touchScene(scene); renderCards();
+    });
     root.append(item);
   });
   $("#dropZone").classList.toggle("hidden", scene.screenshots.length >= 3);
@@ -534,7 +612,7 @@ async function addScreenshots(files) {
   const room = 3 - scene.screenshots.length;
   if (!room) return showToast("每场最多保留三张截图");
   const selected = images.slice(0, room);
-  for (const file of selected) scene.screenshots.push({ src: await fileToOptimizedDataUrl(file), x: 50, y: 50 });
+  for (const file of selected) scene.screenshots.push({ src: await fileToOptimizedDataUrl(file), x: 50, y: 50, fit: "cover" });
   if (images.length > room) showToast(`本次已添加 ${selected.length} 张，另有 ${images.length - selected.length} 张因数量上限未添加`);
   touchScene(scene);
   renderScreenshots(scene);
@@ -575,8 +653,10 @@ function renderReview() {
     row.innerHTML = `
       <td><strong>${padScene(scene.number)}</strong></td>
       <td>${escapeHtml(scene.title || "未命名场次")}</td>
+      <td>${escapeHtml([scene.sequence, scene.unitType].filter(Boolean).join(" · ") || "—")}</td>
       <td>${escapeHtml(scene.functions.join(" / ") || "—")}</td>
-      <td>${escapeHtml(scene.valueDirection || "—")}</td>
+      <td>${escapeHtml(sceneValueChangeLabel(scene) || "—")}</td>
+      <td>${escapeHtml(primarySceneResult(scene) || (scene.unitType === "序列片段" ? "序列继续" : "—"))}</td>
       <td>${selectHtml("act", ACT_OPTIONS, scene.act)}</td>
       <td>${selectHtml("beat", BEAT_OPTIONS, scene.beat)}</td>
       <td><button class="text-button open-review-scene" type="button">打开场次</button></td>`;
@@ -637,7 +717,8 @@ function cardBase(ctx, scene, number, title) {
   ctx.textAlign = "right";
   ctx.fillStyle = "#d95f32";
   ctx.font = "700 22px Georgia, serif";
-  ctx.fillText(`${String(number).padStart(2, "0")} / 03`, 1002, 84);
+  const totalCards = scene.includeInsightCard ? 3 : 2;
+  ctx.fillText(`${String(number).padStart(2, "0")} / ${String(totalCards).padStart(2, "0")}`, 1002, 84);
   ctx.textAlign = "left";
   ctx.fillStyle = "#20201d";
   ctx.font = "600 50px Georgia, 'Songti SC', serif";
@@ -660,11 +741,25 @@ function loadImage(source) {
   });
 }
 
-function drawCoverImage(ctx, image, x, y, w, h, position = { x: 50, y: 50 }) {
-  const scale = Math.max(w / image.width, h / image.height);
-  const sw = w / scale, sh = h / scale;
-  const sx = (image.width - sw) * ((position.x ?? 50) / 100), sy = (image.height - sh) * ((position.y ?? 50) / 100);
-  ctx.save(); roundedRect(ctx, x, y, w, h, 22); ctx.clip(); ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h); ctx.restore();
+function drawFrameImage(ctx, image, x, y, w, h, screenshot) {
+  const position = screenshotPosition(screenshot);
+  const fit = screenshotFit(screenshot);
+  ctx.save();
+  roundedRect(ctx, x, y, w, h, 22);
+  ctx.clip();
+  if (fit === "contain") {
+    ctx.fillStyle = "#171714";
+    ctx.fillRect(x, y, w, h);
+    const scale = Math.min(w / image.width, h / image.height);
+    const dw = image.width * scale, dh = image.height * scale;
+    ctx.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  } else {
+    const scale = Math.max(w / image.width, h / image.height);
+    const sw = w / scale, sh = h / scale;
+    const sx = (image.width - sw) * ((position.x ?? 50) / 100), sy = (image.height - sh) * ((position.y ?? 50) / 100);
+    ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+  }
+  ctx.restore();
 }
 
 async function drawCard1(scene, token) {
@@ -678,27 +773,38 @@ async function drawCard1(scene, token) {
     ctx.fillStyle = "#e6ded0"; roundedRect(ctx, 76, y, 928, 570, 22); ctx.fill();
     ctx.textAlign = "center"; ctx.fillStyle = "#9b9388"; ctx.font = "500 28px -apple-system, 'PingFang SC', sans-serif";
     ctx.fillText("粘贴一张场景截图", 540, y + 293); ctx.textAlign = "left";
-  } else if (images.length === 1) drawCoverImage(ctx, images[0], 76, y, 928, 570, screenshotPosition(scene.screenshots[0]));
+  } else if (images.length === 1) drawFrameImage(ctx, images[0], 76, y, 928, 570, scene.screenshots[0]);
   else if (images.length === 2) {
-    drawCoverImage(ctx, images[0], 76, y, 610, 570, screenshotPosition(scene.screenshots[0]));
-    drawCoverImage(ctx, images[1], 700, y, 304, 570, screenshotPosition(scene.screenshots[1]));
+    drawFrameImage(ctx, images[0], 76, y, 610, 570, scene.screenshots[0]);
+    drawFrameImage(ctx, images[1], 700, y, 304, 570, scene.screenshots[1]);
   } else {
-    drawCoverImage(ctx, images[0], 76, y, 610, 570, screenshotPosition(scene.screenshots[0]));
-    drawCoverImage(ctx, images[1], 700, y, 304, 278, screenshotPosition(scene.screenshots[1]));
-    drawCoverImage(ctx, images[2], 700, y + 292, 304, 278, screenshotPosition(scene.screenshots[2]));
+    drawFrameImage(ctx, images[0], 76, y, 610, 570, scene.screenshots[0]);
+    drawFrameImage(ctx, images[1], 700, y, 304, 278, scene.screenshots[1]);
+    drawFrameImage(ctx, images[2], 700, y + 292, 304, 278, scene.screenshots[2]);
   }
   ctx.fillStyle = "#20201d"; ctx.font = "600 29px Georgia, 'Songti SC', serif"; ctx.fillText("这一场发生了什么", 76, 916);
   ctx.fillStyle = "#3b3934"; ctx.font = "450 29px -apple-system, 'PingFang SC', sans-serif";
   drawLines(ctx, scene.summary || "尚未填写一句话概括。", 76, 968, 928, 45, 4);
-  const tags = [scene.setting, scene.valueDirection, ...scene.functions].filter(Boolean);
+  const tags = [scene.setting, scene.unitType === "序列片段" ? "序列片段" : "", sceneValueChangeLabel(scene), ...scene.functions].filter(Boolean);
   let tx = 76, ty = 1180;
   ctx.font = "600 21px -apple-system, 'PingFang SC', sans-serif";
-  tags.forEach((tag) => {
-    const width = ctx.measureText(tag).width + 34;
+  let hiddenTags = 0;
+  tags.forEach((tag, index) => {
+    if (hiddenTags) return;
+    const displayTag = String(tag).length > 28 ? `${String(tag).slice(0, 27)}…` : String(tag);
+    const width = Math.min(928, ctx.measureText(displayTag).width + 34);
     if (tx + width > 1004) { tx = 76; ty += 48; }
+    if (ty > 1228) { hiddenTags = tags.length - index; return; }
     ctx.fillStyle = "#ead4c6"; roundedRect(ctx, tx, ty, width, 35, 18); ctx.fill();
-    ctx.fillStyle = "#84391f"; ctx.fillText(tag, tx + 17, ty + 25); tx += width + 10;
+    ctx.fillStyle = "#84391f"; ctx.fillText(displayTag, tx + 17, ty + 25); tx += width + 10;
   });
+  if (hiddenTags) {
+    const more = `+${hiddenTags}`;
+    const width = ctx.measureText(more).width + 34;
+    if (tx + width > 1004) { tx = 76; ty = 1228; }
+    ctx.fillStyle = "#ead4c6"; roundedRect(ctx, tx, ty, width, 35, 18); ctx.fill();
+    ctx.fillStyle = "#84391f"; ctx.fillText(more, tx + 17, ty + 25);
+  }
 }
 
 function actionLineText(line) {
@@ -707,32 +813,60 @@ function actionLineText(line) {
   ];
 }
 
+function actionBlockLayout(ctx, line, count) {
+  const config = count === 1
+    ? { fontSize: 23, lineHeight: 34, rowMin: 40, textTop: 92, limits: [2, 2, 3, 2, 2], bottom: 22 }
+    : count === 2
+      ? { fontSize: 22, lineHeight: 31, rowMin: 36, textTop: 86, limits: [1, 1, 2, 1, 1], bottom: 20 }
+      : { fontSize: 20, lineHeight: 28, rowMin: 31, textTop: 72, limits: [1, 1, 1, 1, 1], bottom: 16 };
+  ctx.font = `450 ${config.fontSize}px -apple-system, 'PingFang SC', sans-serif`;
+  const fields = actionLineText(line).map(([label, value], index) => ({
+    label,
+    parts: wrapText(ctx, value || "—", 800, config.limits[index]),
+  }));
+  const rowsHeight = fields.reduce((sum, field) => sum + Math.max(config.rowMin, field.parts.length * config.lineHeight + 7), 0);
+  return { ...config, fields, height: config.textTop + rowsHeight + config.bottom };
+}
+
 async function drawCard2(scene) {
   const canvas = $("#cardCanvas2");
   const ctx = canvas.getContext("2d");
   cardBase(ctx, scene, 2, "这场戏如何运转");
   let y = 270;
-  const lines = scene.actionLines.slice(0, 3);
-  const blockHeight = lines.length === 1 ? 590 : lines.length === 2 ? 375 : 265;
+  const lines = activeActionLines(scene).slice(0, 3);
+  if (!lines.length) {
+    ctx.fillStyle = "#e6ded0"; roundedRect(ctx, 76, y, 928, 230, 20); ctx.fill();
+    ctx.fillStyle = "#777269"; ctx.font = "550 25px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText("先找到一个拥有目标的人物", 106, y + 96);
+    ctx.font = "450 21px -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText("有动作不等于有行动线。", 106, y + 142);
+    y += 248;
+  }
   lines.forEach((line, index) => {
-    ctx.fillStyle = index === 0 ? "#20201d" : "#363d37"; roundedRect(ctx, 76, y, 928, blockHeight, 20); ctx.fill();
+    const layout = actionBlockLayout(ctx, line, lines.length);
+    ctx.fillStyle = index === 0 ? "#20201d" : "#363d37"; roundedRect(ctx, 76, y, 928, layout.height, 20); ctx.fill();
     ctx.fillStyle = "#f0ad88"; ctx.font = "700 21px Georgia, serif"; ctx.fillText(`ACTION ${String(index + 1).padStart(2, "0")}`, 106, y + 48);
-    let textY = y + (lines.length === 3 ? 74 : 92);
-    const maxLines = lines.length === 1 ? 3 : 1;
-    actionLineText(line).forEach(([label, value]) => {
+    let textY = y + layout.textTop;
+    layout.fields.forEach(({ label, parts }) => {
       ctx.fillStyle = "#f0ad88"; ctx.font = "700 22px -apple-system, 'PingFang SC', sans-serif"; ctx.fillText(label, 106, textY);
-      ctx.fillStyle = "#fffaf2"; ctx.font = "450 23px -apple-system, 'PingFang SC', sans-serif";
-      const fieldLines = lines.length === 2 && label === "做" ? 2 : maxLines;
-      const wrapped = wrapText(ctx, value || "—", 800, fieldLines);
-      wrapped.forEach((part, lineIndex) => ctx.fillText(part, 156, textY + lineIndex * 34));
-      textY += Math.max(36, wrapped.length * 34 + 9);
+      ctx.fillStyle = "#fffaf2"; ctx.font = `450 ${layout.fontSize}px -apple-system, 'PingFang SC', sans-serif`;
+      parts.forEach((part, lineIndex) => ctx.fillText(part, 156, textY + lineIndex * layout.lineHeight));
+      textY += Math.max(layout.rowMin, parts.length * layout.lineHeight + 7);
     });
-    y += blockHeight + 18;
+    y += layout.height + 18;
   });
-  const knowledgeY = y + 15;
+  const knowledgeY = y + 12;
   ctx.fillStyle = "#d95f32"; ctx.font = "700 22px -apple-system, 'PingFang SC', sans-serif"; ctx.fillText("知", 76, knowledgeY);
   ctx.fillStyle = "#20201d"; ctx.font = "450 25px -apple-system, 'PingFang SC', sans-serif";
-  drawLines(ctx, scene.knowledge || "观众新知道了什么？", 126, knowledgeY, 878, 38, lines.length === 1 ? 6 : 4);
+  const factMax = Math.max(1, Math.min(lines.length <= 1 ? 5 : 3, Math.floor((1280 - knowledgeY - (scene.hypothesis ? 118 : 0)) / 38)));
+  const factBottom = drawLines(ctx, scene.knowledge || "本场确认了什么？", 126, knowledgeY, 878, 38, factMax);
+  if (scene.hypothesis) {
+    const hypothesisY = factBottom + 18;
+    ctx.fillStyle = "#627166"; ctx.font = "700 22px -apple-system, 'PingFang SC', sans-serif"; ctx.fillText("推", 76, hypothesisY);
+    ctx.fillStyle = "#20201d"; ctx.font = "450 23px -apple-system, 'PingFang SC', sans-serif";
+    const hypothesisMax = Math.max(1, Math.min(3, Math.floor((1280 - hypothesisY) / 35)));
+    drawLines(ctx, scene.hypothesis, 126, hypothesisY, 878, 35, hypothesisMax);
+  }
 }
 
 async function drawCard3(scene) {
@@ -791,13 +925,19 @@ function yamlString(value) {
 }
 
 function sceneMarkdown(project, scene) {
-  const people = [...new Set(scene.actionLines.flatMap((line) => line.who.split(/[、，,\/]/).map((item) => item.trim())).filter(Boolean))];
-  const actions = scene.actionLines.map((line, index) => `### 行动线 ${index + 1}\n\n- **谁** ${line.who || "—"}\n- **要** ${line.want || "—"}\n- **做** ${line.do || "—"}\n- **阻** ${line.obstacle || "—"}\n- **变** ${line.change || "—"}`).join("\n\n");
+  const actionLines = activeActionLines(scene);
+  const people = [...new Set(actionLines.flatMap((line) => line.who.split(/[、，,\/]/).map((item) => item.trim())).filter(Boolean))];
+  const actions = actionLines.map((line, index) => `### 行动线 ${index + 1}\n\n- **谁** ${line.who || "—"}\n- **要** ${line.want || "—"}\n- **做** ${line.do || "—"}\n- **阻** ${line.obstacle || "—"}\n- **变（结果）** ${line.change || "—"}`).join("\n\n");
   const screenshotEmbeds = scene.screenshots.map((_, index) => `![[assets/${padScene(scene.number)}-${index + 1}.jpg]]`).join("\n");
   return `---
 场号: ${yamlString(padScene(scene.number))}
 标题: ${yamlString(scene.title)}
+分析层级: ${yamlString(scene.unitType)}
+所属序列: ${yamlString(scene.sequence)}
 戏剧功能: [${scene.functions.map(yamlString).join(", ")}]
+价值轴: ${yamlString(scene.valueAxis)}
+价值开头: ${yamlString(scene.valueFrom)}
+价值结尾: ${yamlString(scene.valueTo)}
 价值走向: ${yamlString(scene.valueDirection)}
 幕: ${yamlString(scene.act)}
 场景类型: ${yamlString(scene.setting)}
@@ -820,9 +960,13 @@ ${screenshotEmbeds}
 
 ${actions}
 
-## 观众新知道了什么
+## 本场确认的新信息
 
 ${scene.knowledge || "—"}
+
+## 暂时推测
+
+${scene.hypothesis || "—"}
 
 ## 细节分析
 
@@ -843,15 +987,15 @@ function overviewMarkdown(project) {
     const text = String(value ?? "").trim() || fallback;
     return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
   };
-  const rows = project.scenes.slice().sort((a, b) => a.number - b.number).map((scene) => `| [[${padScene(scene.number)}]] | ${cell(scene.title, "未命名场次")} | ${cell(scene.functions.join(" / "))} | ${cell(scene.valueDirection)} | ${cell(scene.act)} | ${cell(scene.beat)} |`).join("\n");
+  const rows = project.scenes.slice().sort((a, b) => a.number - b.number).map((scene) => `| [[${padScene(scene.number)}]] | ${cell(scene.title, "未命名场次")} | ${cell([scene.sequence, scene.unitType].filter(Boolean).join(" · "))} | ${cell(scene.functions.join(" / "))} | ${cell(sceneValueChangeLabel(scene))} | ${cell(primarySceneResult(scene), scene.unitType === "序列片段" ? "序列继续" : "—")} | ${cell(scene.act)} | ${cell(scene.beat)} |`).join("\n");
   return `# ${project.title} · 拉片总览
 
 ${project.creator || project.year ? `> ${[project.year, project.creator].filter(Boolean).join(" · ")}\n` : ""}${project.goal ? `> 学习目标：${project.goal}\n` : ""}
 ## 全片场次一览
 
-| 场号 | 标题 | 戏剧功能 | 价值走向 | 幕 | 节拍位置 |
-| --- | --- | --- | --- | --- | --- |
-${rows || "| — | 尚无场次 | — | — | — | — |"}
+| 场号 | 标题 | 序列／层级 | 戏剧功能 | 价值变化 | 本场结果 | 幕 | 节拍位置 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+${rows || "| — | 尚无场次 | — | — | — | — | — | — |"}
 `;
 }
 
@@ -956,7 +1100,7 @@ async function restoreBackup(file) {
     saveTimer = null;
     saveRevision += 1;
     state.persistedAt = 0;
-    normalizeTimeFields(state);
+    normalizeWorkspace(state);
     state.activeProjectId = null; state.activeSceneId = null;
     activeWorkspaceTab = "scenes";
     await persistState(); renderApp(); showToast(backup.type === "full" ? "完整备份已恢复" : "单影片备份已导入");
@@ -979,12 +1123,16 @@ function bindEvents() {
   $("#addActionLine").addEventListener("click", () => {
     const scene = currentScene();
     if (scene.actionLines.length >= 3) return showToast("每场最多保留三条行动线");
-    scene.actionLines.push(newActionLine()); touchScene(scene); renderActionLines(scene); renderCards();
+    const lastLine = scene.actionLines[scene.actionLines.length - 1];
+    if (lastLine && ![lastLine.who, lastLine.want, lastLine.do, lastLine.obstacle, lastLine.change].some((value) => String(value || "").trim())) {
+      return showToast("当前空行动线尚未使用");
+    }
+    scene.actionLines.push(newActionLine()); touchScene(scene); renderActionLines(scene); renderQualityHint(scene); renderCards();
   });
   $("#actionLines").addEventListener("click", (event) => {
     const button = event.target.closest(".remove-action"); if (!button) return;
     const scene = currentScene(); const id = button.closest(".action-line").dataset.actionId;
-    scene.actionLines = scene.actionLines.filter((line) => line.id !== id); touchScene(scene); renderActionLines(scene); renderCards();
+    scene.actionLines = scene.actionLines.filter((line) => line.id !== id); touchScene(scene); renderActionLines(scene); renderQualityHint(scene); renderCards();
   });
   $("#sceneForm").addEventListener("input", (event) => {
     const scene = currentScene(); if (!scene) return;
@@ -997,9 +1145,17 @@ function bindEvents() {
       if (line) line[actionField] = event.target.value;
     }
     if (event.target.closest("#functionChoices")) scene.functions = $$('#functionChoices input:checked').map((input) => input.value);
-    touchScene(scene); updateCounters(); updateInsightState(scene); renderSceneList(); renderCards();
+    touchScene(scene); updateCounters(); updateInsightState(scene); renderQualityHint(scene); renderSceneList(); renderCards();
   });
-  $("#sceneComplete").addEventListener("change", (event) => { const scene = currentScene(); scene.complete = event.target.checked; touchScene(scene); renderSceneList(); renderWorkspaceHeadingOnly(); });
+  $("#sceneComplete").addEventListener("change", (event) => {
+    const scene = currentScene();
+    scene.complete = event.target.checked;
+    touchScene(scene); renderQualityHint(scene); renderSceneList(); renderWorkspaceHeadingOnly();
+    if (scene.complete) {
+      const warnings = sceneQualityWarnings(scene);
+      showToast(warnings.length ? `已标记完成；仍建议检查 ${warnings.length} 项` : "本场已完成");
+    }
+  });
   $("#screenshotInput").addEventListener("change", (event) => { addScreenshots(event.target.files); event.target.value = ""; });
   $("#dropZone").addEventListener("dragover", (event) => { event.preventDefault(); event.currentTarget.classList.add("dragging"); });
   $("#dropZone").addEventListener("dragleave", (event) => event.currentTarget.classList.remove("dragging"));
@@ -1058,7 +1214,7 @@ async function init() {
     const workspace = shouldRecover ? mergeRecoveryState(saved, recovery.state) : saved;
     if (workspace?.projects) {
       Object.assign(state, workspace);
-      normalizeTimeFields(state);
+      normalizeWorkspace(state);
     }
     recoveredPendingChanges = Boolean(shouldRecover);
     if (recovery && !shouldRecover) clearRecoveryJournal();

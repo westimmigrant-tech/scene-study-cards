@@ -176,6 +176,19 @@ button { color: inherit; }
 .editor-topline h2, .review-header h2 { margin: 0; font: 500 33px/1.2 Georgia, "Songti SC", serif; }
 .complete-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .complete-toggle input { accent-color: var(--sage); }
+.quality-hint {
+  max-width: 1500px;
+  margin: -8px auto 22px;
+  padding: 11px 14px;
+  border: 1px solid #dfd7ca;
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255,255,255,.36);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.quality-hint.ready { color: #496052; border-color: #bfcbbf; background: #eef3ed; }
+.quality-hint.warning { color: #7e4b31; border-color: #e3c0aa; background: #fbede4; }
 .editor-layout { max-width: 1500px; margin: 0 auto; display: grid; grid-template-columns: minmax(480px, 1fr) minmax(390px, .82fr); gap: 28px; align-items: start; }
 .scene-form { min-width: 0; }
 .form-card { margin: 0 0 18px; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: 0 8px 25px rgba(50,44,37,.035); }
@@ -188,6 +201,7 @@ button { color: inherit; }
 .field-grid.two { grid-template-columns: 1fr 1fr; }
 .span-2 { grid-column: span 2; }
 .time-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
+.value-change-fields { display: grid; grid-template-columns: 1.15fr 1fr 1fr .8fr; gap: 12px; align-items: start; }
 .field { display: grid; gap: 7px; min-width: 0; color: #4f4a43; font-size: 13px; font-weight: 700; }
 .field input, .field textarea, .field select {
   width: 100%;
@@ -204,6 +218,7 @@ button { color: inherit; }
 .time-result input { color: var(--sage); background: #f2f1eb; font-weight: 700; }
 .field-hint { min-height: 17px; color: var(--muted); font-size: 11px; font-weight: 450; line-height: 1.45; }
 .field-hint.error { color: var(--danger); }
+.field-explainer { margin: -6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .counter { justify-self: end; color: #9b9388; font-weight: 500; }
 .tag-field { border: 0; padding: 0; margin: 0; }
 .tag-field legend { margin-bottom: 8px; }
@@ -229,6 +244,8 @@ button { color: inherit; }
 .shot-order button:disabled { opacity: .25; cursor: default; }
 .crop-control { margin-top: 5px; display: grid; grid-template-columns: 27px 1fr; align-items: center; gap: 3px; color: var(--muted); font-size: 9px; }
 .crop-control input { width: 100%; accent-color: var(--orange); }
+.fit-control { margin-top: 7px; display: grid; gap: 4px; color: var(--muted); font-size: 9px; }
+.fit-control select { width: 100%; padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--ink); font-size: 10px; }
 
 .action-lines { display: grid; gap: 13px; margin-bottom: 18px; }
 .action-line { padding: 16px; border: 1px solid #ded7ca; border-radius: 16px; background: #f9f6ef; }
@@ -265,7 +282,7 @@ button { color: inherit; }
 .review-header { max-width: 1240px; margin: 0 auto 28px; display: flex; justify-content: space-between; gap: 30px; align-items: end; }
 .review-header > div > p:last-child { color: var(--muted); }
 .review-table-wrap { max-width: 1240px; margin: 0 auto; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
-.review-table { width: 100%; border-collapse: collapse; min-width: 920px; }
+.review-table { width: 100%; border-collapse: collapse; min-width: 1280px; }
 .review-table th, .review-table td { padding: 13px; border-bottom: 1px solid #e5ded3; text-align: left; font-size: 13px; vertical-align: top; }
 .review-table th { color: var(--muted); background: #f6f2ea; }
 .review-table select { max-width: 150px; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: white; }
@@ -304,6 +321,7 @@ button { color: inherit; }
   .field-grid.two { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
   .time-fields { grid-template-columns: 1fr; }
+  .value-change-fields { grid-template-columns: 1fr 1fr; }
   .section-heading.with-action, .section-heading.with-switch { grid-template-columns: 30px 1fr; }
   .section-heading.with-action .button, .section-heading.with-switch .switch { grid-column: 2; justify-self: start; }
   .card-previews { grid-template-columns: 1fr; }
@@ -318,5 +336,6 @@ button { color: inherit; }
   .editor-actions { margin-top: 14px; justify-content: start; }
   .form-card { padding: 19px; }
   .screenshot-list { grid-template-columns: 1fr; }
+  .value-change-fields { grid-template-columns: 1fr; }
   .notes-card summary { display: grid; gap: 5px; }
 }

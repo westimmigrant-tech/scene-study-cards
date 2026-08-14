@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#20201d">
   <title>拉片卡 · 场景学习工作台</title>
   <meta name="description" content="按影片项目管理场次，拆解人物行动，生成拉片学习卡，并归档到 Obsidian。">
-  <link rel="stylesheet" href="styles.css?v=20260814-1">
+  <link rel="stylesheet" href="styles.css?v=20260814-2">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -89,6 +89,7 @@
               <button id="deleteSceneButton" class="button danger-text" type="button">删除场次</button>
             </div>
           </div>
+          <div id="sceneQualityHint" class="quality-hint" role="status" aria-live="polite"></div>
 
           <div class="editor-layout">
             <form id="sceneForm" class="scene-form" autocomplete="off">
@@ -103,6 +104,17 @@
                 <div class="field-grid two">
                   <label class="field span-2">场景标题
                     <input id="sceneTitle" data-field="title" type="text" placeholder="例如：马蒂接到妈妈的电话" maxlength="70">
+                  </label>
+                  <label class="field">分析层级
+                    <select id="sceneUnitType" data-field="unitType">
+                      <option>独立场</option>
+                      <option>序列片段</option>
+                    </select>
+                    <small class="field-hint">这一场是否需要与前后场合起来，才形成完整的戏剧动作？</small>
+                  </label>
+                  <label class="field">所属序列（可选）
+                    <input id="sceneSequence" data-field="sequence" type="text" placeholder="例如：训练被家庭来电打断" maxlength="80">
+                    <small class="field-hint">相邻短场可使用同一序列名，全片复盘时会连在一起。</small>
                   </label>
                   <div class="time-fields span-2">
                     <label class="field">开始时间
@@ -124,18 +136,30 @@
                       <option>混合场景</option>
                     </select>
                   </label>
-                  <label class="field">价值走向
-                    <select id="sceneValueDirection" data-field="valueDirection">
-                      <option value="">暂不判断</option>
-                      <option>正向</option><option>负向</option><option>混合</option><option>过场</option>
-                    </select>
-                  </label>
+                  <div class="value-change-fields span-2">
+                    <label class="field">价值轴
+                      <input id="sceneValueAxis" data-field="valueAxis" type="text" placeholder="例如：掌控训练" maxlength="60">
+                    </label>
+                    <label class="field">开头状态
+                      <input id="sceneValueFrom" data-field="valueFrom" type="text" placeholder="例如：占上风" maxlength="60">
+                    </label>
+                    <label class="field">结尾状态
+                      <input id="sceneValueTo" data-field="valueTo" type="text" placeholder="例如：失分并中断" maxlength="60">
+                    </label>
+                    <label class="field">方向
+                      <select id="sceneValueDirection" data-field="valueDirection">
+                        <option value="">暂不判断</option>
+                        <option>正向</option><option>负向</option><option>混合</option><option>不变</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="field-explainer span-2">先写清“什么变了”，再判断正负；“过场”属于戏剧功能，不是价值方向。</p>
                   <fieldset class="field span-2 tag-field">
                     <legend>戏剧功能（可多选）</legend>
                     <div id="functionChoices" class="choice-row"></div>
                   </fieldset>
                   <label class="field span-2">一句话概括
-                    <textarea id="sceneSummary" data-field="summary" rows="3" placeholder="这一场里，谁做了什么，局势怎样改变？" maxlength="180"></textarea>
+                    <textarea id="sceneSummary" data-field="summary" rows="3" placeholder="谁想做什么，被什么打断，结果如何？序列片段可只写本场推进到哪一步。" maxlength="180"></textarea>
                     <small class="counter" data-counter-for="sceneSummary"></small>
                   </label>
                 </div>
@@ -162,14 +186,18 @@
                   <span>03</span>
                   <div>
                     <h3>人物行动线</h3>
-                    <p>把并行任务拆开，每条都保留完整的因果。</p>
+                    <p>只记拥有独立目标、并对局势造成作用的人物。有动作不等于有行动线。</p>
                   </div>
                   <button id="addActionLine" class="button small ghost" type="button">＋ 增加行动线</button>
                 </div>
                 <div id="actionLines" class="action-lines"></div>
-                <label class="field">观众新知道了什么
-                  <textarea id="sceneKnowledge" data-field="knowledge" rows="4" placeholder="人物、关系、世界、威胁或伏笔……" maxlength="420"></textarea>
+                <label class="field">本场确认的新信息
+                  <textarea id="sceneKnowledge" data-field="knowledge" rows="4" placeholder="画面或台词已经证实的人物、关系、世界、威胁或伏笔……" maxlength="420"></textarea>
                   <small class="counter" data-counter-for="sceneKnowledge"></small>
+                </label>
+                <label class="field">暂时推测（待后文验证）
+                  <textarea id="sceneHypothesis" data-field="hypothesis" rows="3" placeholder="例如：他可能早已熟悉家人的这套把戏。" maxlength="320"></textarea>
+                  <small class="counter" data-counter-for="sceneHypothesis"></small>
                 </label>
               </section>
 
@@ -245,13 +273,13 @@
             <div>
               <p class="eyebrow">拉完全片后再回来</p>
               <h2>全片结构复盘</h2>
-              <p>统一补充幕与节拍位置，也可以回头校正场景功能和价值走向。</p>
+              <p>统一检查序列、本场结果、价值变化、幕与节拍位置。</p>
             </div>
             <button id="markProjectComplete" class="button dark" type="button">标记全片拉完</button>
           </div>
           <div class="review-table-wrap">
             <table class="review-table">
-              <thead><tr><th>场</th><th>标题</th><th>功能</th><th>价值</th><th>幕</th><th>节拍位置</th><th></th></tr></thead>
+              <thead><tr><th>场</th><th>标题</th><th>序列／层级</th><th>功能</th><th>价值变化</th><th>本场结果</th><th>幕</th><th>节拍位置</th><th></th></tr></thead>
               <tbody id="reviewTableBody"></tbody>
             </table>
           </div>
@@ -300,7 +328,7 @@
           <input data-action-field="who" type="text" placeholder="行动主体" maxlength="80">
         </label>
         <label class="field">要
-          <input data-action-field="want" type="text" placeholder="他想得到什么" maxlength="120">
+          <input data-action-field="want" type="text" placeholder="本场想达成的具体结果，不只写活动或态度" maxlength="120">
         </label>
         <label class="field span-2">做
           <textarea data-action-field="do" rows="2" placeholder="他具体采取什么手段" maxlength="220"></textarea>
@@ -308,13 +336,13 @@
         <label class="field">阻
           <textarea data-action-field="obstacle" rows="2" placeholder="谁或什么阻止他" maxlength="180"></textarea>
         </label>
-        <label class="field">变
-          <textarea data-action-field="change" rows="2" placeholder="这条行动线最后怎样" maxlength="180"></textarea>
+        <label class="field">变（结果）
+          <textarea data-action-field="change" rows="2" placeholder="故事世界中发生了什么；可写未解决、但压力升级" maxlength="180"></textarea>
         </label>
       </div>
     </article>
   </template>
 
-  <script src="app.js?v=20260814-1"></script>
+  <script src="app.js?v=20260814-2"></script>
 </body>
 </html>
